@@ -5,13 +5,13 @@ A Discord-first anime character trading-card game where total collection points 
 ## Current foundation
 - Discord HTTP interactions on Cloudflare Workers.
 - Supabase/PostgreSQL schema for players, cards, ownership, trades, and audit history.
-- Initial slash commands: /start, /profile, /pack, /collection, /daily.
+- Initial slash commands: /start, /profile, /pack, /collection, /leaderboard, /daily.
 - Ten supported series: Naruto, Death Note, Jujutsu Kaisen, One Piece, Vinland Saga, My Hero Academia, Demon Slayer, One-Punch Man, Pokémon, Attack on Titan.
 - Starter examples only. This is not yet an exhaustive roster of every character.
 
 ## Setup
 1. Create a Discord application and bot in the Discord Developer Portal.
-2. Create a Supabase project and run database/schema.sql in its SQL editor.
+2. Create a Supabase project and run these files in order in its SQL editor: database/schema.sql, database/seed-starter.sql, database/functions.sql, then database/leaderboard.sql.
 3. Install and deploy: npm install, then configure Cloudflare Worker secrets DISCORD_PUBLIC_KEY, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY, then run npx wrangler deploy.
 4. Set the Discord Interactions Endpoint URL to the deployed Worker URL.
 5. Register slash commands with DISCORD_APPLICATION_ID, DISCORD_BOT_TOKEN, and optionally DISCORD_GUILD_ID, then run npm run register.
