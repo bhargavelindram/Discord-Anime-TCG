@@ -1,0 +1,6 @@
+name = "discord-anime-tcg"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Configure DISCORD_APPLICATION_ID in Cloudflare settings if needed.
