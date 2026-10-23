@@ -58,12 +58,64 @@ async function totalPoints(env, userId) {
   return rows.reduce((sum, row) => sum + Number(row.cards && row.cards.points || 0) * Number(row.quantity || 0), 0);
 }
 
+async function discordMessage(env, channelId, payload) {
+  if (!env.DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is not configured.");
+  const response = await fetch("https://discord.com/api/v10/channels/" + channelId + "/messages", {
+    method: "POST",
+    headers: { authorization: "Bot " + env.DISCORD_BOT_TOKEN, "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error("Discord message failed (" + response.status + "): " + text.slice(0, 160));
+  return text ? JSON.parse(text) : {};
+}
+
+async function spawnHourlyCard(env) {
+  if (!env.SPAWN_CHANNEL_ID) throw new Error("SPAWN_CHANNEL_ID is not configured.");
+  const card = await db(env, "rpc/spawn_hourly_card", {
+    method: "POST", body: JSON.stringify({ p_channel_id: env.SPAWN_CHANNEL_ID })
+  });
+  const payload = {
+    content: "**A character has appeared!**\nBe the first to use /catch with their **exact full name** to add the card to your collection."
+  };
+  if (card.image_url && ["authorized", "licensed", "public-domain"].includes(card.image_rights_status)) {
+    payload.embeds = [{ image: { url: card.image_url }, footer: { text: "Identify the character by their full name • Card expires in 1 hour" } }];
+  } else {
+    payload.content += "\n(Artwork will appear when an approved image is added to the catalogue.)";
+  }
+  const message = await discordMessage(env, env.SPAWN_CHANNEL_ID, payload);
+  await db(env, "rpc/set_spawn_message", {
+    method: "POST",
+    body: JSON.stringify({ p_channel_id: env.SPAWN_CHANNEL_ID, p_message_id: message.id })
+  });
+}
+
 async function handle(interaction, env) {
   const command = interaction.data && interaction.data.name;
   const user = interaction.member && interaction.member.user || interaction.user;
   if (!user || !user.id) return reply("I couldn't identify your Discord account.", true);
   const player = await ensurePlayer(env, user);
   const id = encodeURIComponent(user.id);
+
+  if (command === "catch") {
+    if (!interaction.channel_id) return reply("Use /catch in the channel where the character appeared.", true);
+    const fullName = (interaction.data.options || []).find(option => option.name === "full_name")?.value || "";
+    const result = await db(env, "rpc/catch_spawn", {
+      method: "POST",
+      body: JSON.stringify({
+        p_channel_id: interaction.channel_id,
+        p_discord_id: user.id,
+        p_username: user.global_name || user.username || "Player",
+        p_full_name: fullName
+      })
+    });
+    if (!result.ok) {
+      if (result.reason === "wrong-name") return reply("That isn't the exact full character name. Check the spawned card and try again.", true);
+      if (result.reason === "already-caught") return reply("Someone has already collected this character.", true);
+      return reply("There is no available character in this channel right now. Wait for the next hourly spawn.", true);
+    }
+    return reply("**" + safeName(result.character_name) + "** was collected by <@" + user.id + ">!\nCard value: **" + Number(result.points).toLocaleString("en-US") + " points**\nUse /profile to check your total collection score.");
+  }
 
   if (command === "start") {
     return reply("**Anime TCG profile created.** Use /pack to collect a card, /collection to view your cards, and /profile to see your total points.", true);
@@ -136,6 +188,12 @@ async function handle(interaction, env) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil((async () => {
+      try { await spawnHourlyCard(env); }
+      catch (error) { console.error("Hourly card spawn failed:", error && error.message || error); }
+    })());
+  },
   async fetch(request, env) {
     if (request.method === "GET") return new Response("Discord Anime TCG worker is online.");
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
