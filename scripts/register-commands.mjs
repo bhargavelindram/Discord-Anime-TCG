@@ -10,6 +10,7 @@ const commands = [
   { name: "profile", description: "View your player stats and collection score" },
   { name: "pack", description: "Spend 100 coins to collect a random character card" },
   { name: "collection", description: "View your character cards and point values" },
+  { name: "leaderboard", description: "View the top collectors by total collection points" },
   { name: "daily", description: "Claim daily coins and XP" }
 ];
 const url = guildId
