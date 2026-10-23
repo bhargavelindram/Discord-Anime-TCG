@@ -9,8 +9,9 @@ const commands = [
   { name: "start", description: "Create your Anime TCG profile" },
   { name: "profile", description: "View your player stats and collection score" },
   { name: "pack", description: "Spend 100 coins to collect a random character card" },
-  { name: "catch", description: "Catch the current spawned character by full name", options: [{ name: "full_name", description: "Exact full character name shown or known from the spawn", type: 3, required: true }] },
+  { name: "card", description: "Open a card you already own by character-name slug", options: [{ name: "name", description: "Full character name as a slug, e.g. gojo_satoru", type: 3, required: true }] },
   { name: "collection", description: "View your character cards and point values" },
+  { name: "inventory", description: "View the cards in your storage" },
   { name: "leaderboard", description: "View the top collectors by total collection points" },
   { name: "daily", description: "Claim daily coins and XP" }
 ];
