@@ -3,4 +3,9 @@ main = "src/worker.js"
 compatibility_date = "2026-10-01"
 
 [vars]
-# Configure DISCORD_APPLICATION_ID in Cloudflare settings if needed.
+# Set SPAWN_CHANNEL_ID in Cloudflare Worker settings.
+# Add DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN, SUPABASE_URL, and
+# SUPABASE_SERVICE_ROLE_KEY as Worker secrets.
+
+[triggers]
+crons = ["0 * * * *"]
