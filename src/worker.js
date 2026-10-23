@@ -74,6 +74,13 @@ async function handle(interaction, env) {
     return reply("**" + safeName(player.username) + "'s collection**\nTotal points: **" + points.toLocaleString("en-US") + "**\nCoins: **" + Number(player.coins).toLocaleString("en-US") + "**\nXP: **" + Number(player.xp).toLocaleString("en-US") + "**");
   }
 
+  if (command === "leaderboard") {
+    const rows = await db(env, "rpc/leaderboard_points", { method: "POST", body: "{}" });
+    if (!rows.length) return reply("No collectors have joined yet.");
+    const lines = rows.map((row, index) => (index + 1) + ". **" + safeName(row.username) + "** — " + Number(row.total_points || 0).toLocaleString("en-US") + " points");
+    return reply("**Anime TCG — Global Collection Leaderboard**\n" + lines.join("\n"));
+  }
+
   if (command === "collection") {
     const rows = await db(env, "player_cards?discord_id=eq." + id + "&select=quantity,cards(character_name,points)&order=acquired_at.desc&limit=20");
     if (!rows.length) return reply("Your collection is empty. Use /pack to collect your first card.", true);
