@@ -1,5 +1,3 @@
-import { pickWeighted } from "./catalog.js";
-
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { "content-type": "application/json; charset=utf-8" }
 });
@@ -86,31 +84,18 @@ async function handle(interaction, env) {
 
   if (command === "pack") {
     if (Number(player.coins) < 100) return reply("You need 100 coins to open a pack. Claim /daily for more.", true);
-    const cards = await db(env, "cards?active=eq.true&select=id,character_name,points,rarity,drop_weight,image_url,image_rights_status");
-    const eligible = cards.filter(card => card.image_rights_status !== "blocked");
-    if (!eligible.length) return reply("The card catalogue has not been imported yet. Add audited card records to the database first.", true);
-    const card = pickWeighted(eligible.map(item => ({ ...item, dropWeight: Number(item.drop_weight) })));
-    // Replace these sequential writes with a database RPC transaction before a public launch.
-    await db(env, "players?discord_id=eq." + id, {
-      method: "PATCH", headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ coins: Number(player.coins) - 100, updated_at: new Date().toISOString() })
-    });
-    const existing = await db(env, "player_cards?discord_id=eq." + id + "&card_id=eq." + encodeURIComponent(card.id) + "&select=id,quantity");
-    if (existing.length) {
-      await db(env, "player_cards?id=eq." + encodeURIComponent(existing[0].id), {
-        method: "PATCH", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ quantity: Number(existing[0].quantity) + 1 })
+    let card;
+    try {
+      card = await db(env, "rpc/open_card_pack", {
+        method: "POST",
+        body: JSON.stringify({ p_discord_id: user.id })
       });
-    } else {
-      await db(env, "player_cards", {
-        method: "POST", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ discord_id: user.id, card_id: card.id, quantity: 1 })
-      });
+    } catch (error) {
+      const message = String(error && error.message || error);
+      if (message.includes("NOT_ENOUGH_COINS")) return reply("You need 100 coins to open a pack. Claim /daily for more.", true);
+      if (message.includes("NO_ACTIVE_CARDS")) return reply("The card catalogue has not been imported yet. Add audited card records to the database first.", true);
+      throw error;
     }
-    await db(env, "transactions", {
-      method: "POST", headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ discord_id: user.id, currency: "coins", delta: -100, reason: "pack-open", reference_id: card.id })
-    });
     const label = safeName(card.character_name);
     const points = Number(card.points).toLocaleString("en-US");
     const out = reply("**" + label + "**\n" + points + " points");
