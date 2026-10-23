@@ -9,6 +9,7 @@ const commands = [
   { name: "start", description: "Create your Anime TCG profile" },
   { name: "profile", description: "View your player stats and collection score" },
   { name: "pack", description: "Spend 100 coins to collect a random character card" },
+  { name: "catch", description: "Catch the current spawned character by full name", options: [{ name: "full_name", description: "Exact full character name shown or known from the spawn", type: 3, required: true }] },
   { name: "collection", description: "View your character cards and point values" },
   { name: "leaderboard", description: "View the top collectors by total collection points" },
   { name: "daily", description: "Claim daily coins and XP" }
