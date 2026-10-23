@@ -76,7 +76,8 @@ async function spawnHourlyCard(env) {
     method: "POST", body: JSON.stringify({ p_channel_id: env.SPAWN_CHANNEL_ID })
   });
   const payload = {
-    content: "**A character has appeared!**\nBe the first to use /catch with their **exact full name** to add the card to your collection."
+    content: "**A character has appeared!**\nClick **Catch me!** below, then enter the character's full name. The first correct answer wins.",
+    components: [{ type: 1, components: [{ type: 2, style: 1, label: "Catch me!", custom_id: "spawn_catch" }] }]
   };
   if (card.image_url && ["authorized", "licensed", "public-domain"].includes(card.image_rights_status)) {
     payload.embeds = [{ image: { url: card.image_url }, footer: { text: "Identify the character by their full name • Card expires in 1 hour" } }];
@@ -90,31 +91,56 @@ async function spawnHourlyCard(env) {
   });
 }
 
+async function catchSpawn(interaction, env, user, fullName) {
+  if (!interaction.channel_id) return reply("Use the Catch me! button in the channel where the character appeared.", true);
+  const result = await db(env, "rpc/catch_spawn", {
+    method: "POST",
+    body: JSON.stringify({ p_channel_id: interaction.channel_id, p_discord_id: user.id,
+      p_username: user.global_name || user.username || "Player", p_full_name: fullName })
+  });
+  if (!result.ok) {
+    if (result.reason === "wrong-name") return reply("Not quite! Enter the character's full name exactly as it appears in the character catalogue.", true);
+    if (result.reason === "already-caught") return reply("Someone has already collected this character.", true);
+    return reply("There is no active character spawn in this channel. The next one appears on the hourly schedule.", true);
+  }
+  return reply("**" + safeName(result.character_name) + "** was collected by <@" + user.id + ">!\nCard value: **" + Number(result.points).toLocaleString("en-US") + " points**\nUse /inventory to see your cards.");
+}
+
 async function handle(interaction, env) {
-  const command = interaction.data && interaction.data.name;
   const user = interaction.member && interaction.member.user || interaction.user;
   if (!user || !user.id) return reply("I couldn't identify your Discord account.", true);
+  if (interaction.type === 3 && interaction.data?.custom_id === "spawn_catch") {
+    return { type: 9, data: { custom_id: "spawn_catch_submit", title: "Catch this character",
+      components: [{ type: 1, components: [{ type: 4, custom_id: "character_full_name",
+        label: "Character's full name", style: 1, min_length: 1, max_length: 100,
+        required: true, placeholder: "Type the full name" }] }] } };
+  }
+  if (interaction.type === 5 && interaction.data?.custom_id === "spawn_catch_submit") {
+    const fullName = interaction.data.components?.[0]?.components?.[0]?.value || "";
+    return catchSpawn(interaction, env, user, fullName);
+  }
+  if (interaction.type !== 2) return reply("Unsupported interaction.", true);
+  const command = interaction.data && interaction.data.name;
   const player = await ensurePlayer(env, user);
   const id = encodeURIComponent(user.id);
 
-  if (command === "catch") {
-    if (!interaction.channel_id) return reply("Use /catch in the channel where the character appeared.", true);
-    const fullName = (interaction.data.options || []).find(option => option.name === "full_name")?.value || "";
-    const result = await db(env, "rpc/catch_spawn", {
-      method: "POST",
-      body: JSON.stringify({
-        p_channel_id: interaction.channel_id,
-        p_discord_id: user.id,
-        p_username: user.global_name || user.username || "Player",
-        p_full_name: fullName
-      })
+  if (command === "card") {
+    const slug = (interaction.data.options || []).find(option => option.name === "name")?.value || "";
+    const result = await db(env, "rpc/view_owned_card", {
+      method: "POST", body: JSON.stringify({ p_discord_id: user.id, p_card_slug: slug })
     });
-    if (!result.ok) {
-      if (result.reason === "wrong-name") return reply("That isn't the exact full character name. Check the spawned card and try again.", true);
-      if (result.reason === "already-caught") return reply("Someone has already collected this character.", true);
-      return reply("There is no available character in this channel right now. Wait for the next hourly spawn.", true);
+    if (!result || !result.ok) {
+      if (result?.reason === "not-owned") return reply("You don't have **" + safeName(slug) + "** in your collection yet. Catch a spawn or open a pack first.", true);
+      return reply("I couldn't find that card. Use a full-name slug, for example /card name: gojo_satoru.", true);
     }
-    return reply("**" + safeName(result.character_name) + "** was collected by <@" + user.id + ">!\nCard value: **" + Number(result.points).toLocaleString("en-US") + " points**\nUse /profile to check your total collection score.");
+    const label = safeName(result.character_name);
+    const points = Number(result.points).toLocaleString("en-US");
+    const out = reply("**" + label + "**\n" + points + " points");
+    if (result.image_url && ["authorized", "licensed", "public-domain"].includes(result.image_rights_status)) {
+      out.data.content = "";
+      out.data.embeds = [{ title: label, description: points + " points", image: { url: result.image_url } }];
+    }
+    return out;
   }
 
   if (command === "start") {
@@ -131,6 +157,14 @@ async function handle(interaction, env) {
     if (!rows.length) return reply("No collectors have joined yet.");
     const lines = rows.map((row, index) => (index + 1) + ". **" + safeName(row.username) + "** — " + Number(row.total_points || 0).toLocaleString("en-US") + " points");
     return reply("**Anime TCG — Global Collection Leaderboard**\n" + lines.join("\n"));
+  }
+
+  if (command === "inventory") {
+    const rows = await db(env, "player_cards?discord_id=eq." + id + "&select=quantity,cards(character_name,points)&order=acquired_at.desc&limit=20");
+    if (!rows.length) return reply("Your storage is empty. Catch a spawn or use /pack to get your first card.", true);
+    const lines = rows.map(row => "• **" + safeName(row.cards && row.cards.character_name) + "** — " +
+      Number(row.cards && row.cards.points || 0).toLocaleString("en-US") + " points ×" + Number(row.quantity || 0));
+    return reply("**Your card storage**\n" + lines.join("\n") + "\n\nShowing up to 20 card types. Use /card name: character_slug to open a card.");
   }
 
   if (command === "collection") {
@@ -202,7 +236,7 @@ export default {
     let interaction;
     try { interaction = JSON.parse(body); } catch { return new Response("Invalid JSON", { status: 400 }); }
     if (interaction.type === 1) return json({ type: 1 });
-    if (interaction.type !== 2) return json(reply("Unsupported interaction.", true));
+    if (![2, 3, 5].includes(interaction.type)) return json(reply("Unsupported interaction.", true));
     try { return json(await handle(interaction, env)); }
     catch (error) {
       console.error("Interaction failed:", error && error.message || error);
